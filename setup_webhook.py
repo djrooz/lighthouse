@@ -4,7 +4,7 @@ Vercel). Запускается один раз после деплоя, и ка
 адрес деплоя.
 
 Использование:
-    python setup_webhook.py https://твой-проект.vercel.app/api/webhook
+    python setup_webhook.py https://твой-проект.vercel.app/api/index
 """
 import sys
 import requests
@@ -14,7 +14,7 @@ from config import TELEGRAM_BOT_TOKEN
 
 def main():
     if len(sys.argv) != 2:
-        print("Использование: python setup_webhook.py https://твой-проект.vercel.app/api/webhook")
+        print("Использование: python setup_webhook.py https://твой-проект.vercel.app/api/index")
         sys.exit(1)
 
     webhook_url = sys.argv[1]
