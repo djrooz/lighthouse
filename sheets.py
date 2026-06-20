@@ -3,12 +3,12 @@
 и запись закрытых смен в лист "Daily".
 
 Лист "Персонал": Имя | Telegram | Позиция | Ставка
-Лист "Daily":    Дата | Имя | Смена | Ставка | Аванс | Штраф | Касса | Итог
+Лист "Daily":    Дата | Имя | Время прихода | Время ухода | Смена | Ставка | Аванс | Штраф | Касса | Итог
 
-Дату, Имя, Смену и Ставку бот пишет сам (Ставку — подтянув из "Персонал"
-по Telegram-аккаунту). Аванс/Штраф/Касса заполняет админ вручную. Итог —
-формула, зависит от позиции сотрудника и пересчитывается сама при любом
-изменении ячеек в строке:
+Дату, Имя, Время прихода/ухода, Смену и Ставку бот пишет сам (Ставку —
+подтянув из "Персонал" по Telegram-аккаунту). Аванс/Штраф/Касса заполняет
+админ вручную. Итог — формула, зависит от позиции сотрудника и
+пересчитывается сама при любом изменении ячеек в строке:
 
   админ     : Итог = Ставка * Смена + 1% * Касса - Штраф - Аванс
   официант  : Итог = ЕСЛИ(Касса < 35000; Ставка * Смена + 5% * Касса; 6% * Касса) - Штраф - Аванс
@@ -16,8 +16,8 @@
               су шеф, посудамойка, тех. персонал, уборщица — пока все по умолчанию)
 
 Примечание: в формулах используется ";" как разделитель аргументов внутри
-IF() — это нужно для русской локали Google Sheets (с запятой будет
-синтаксическая ошибка).
+IF() и "," как десятичный разделитель — это нужно для русской локали
+Google Sheets (иначе синтаксическая ошибка).
 """
 import json
 import gspread
@@ -33,14 +33,17 @@ from config import (
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-DAILY_HEADER = ["Дата", "Имя", "Смена", "Ставка", "Аванс", "Штраф", "Касса", "Итог"]
+DAILY_HEADER = ["Дата", "Имя", "Время прихода", "Время ухода", "Смена",
+                 "Ставка", "Аванс", "Штраф", "Касса", "Итог"]
 
-# Колонки листа Daily: A Дата | B Имя | C Смена | D Ставка | E Аванс | F Штраф | G Касса | H Итог
+# Колонки листа Daily:
+# A Дата | B Имя | C Время прихода | D Время ухода | E Смена |
+# F Ставка | G Аванс | H Штраф | I Касса | J Итог
 SPECIAL_FORMULAS = {
-    "админ":    "=D{r}*C{r}+0,01*G{r}-F{r}-E{r}",
-    "официант": "=IF(G{r}<35000;D{r}*C{r}+0,05*G{r};0,06*G{r})-F{r}-E{r}",
+    "админ":    "=F{r}*E{r}+0,01*I{r}-H{r}-G{r}",
+    "официант": "=IF(I{r}<35000;F{r}*E{r}+0,05*I{r};0,06*I{r})-H{r}-G{r}",
 }
-DEFAULT_FORMULA = "=D{r}*C{r}-F{r}-E{r}"  # ставка × смена — для всех остальных позиций
+DEFAULT_FORMULA = "=F{r}*E{r}-H{r}-G{r}"  # ставка × смена — для всех остальных позиций
 
 _client = None
 _spreadsheet = None
@@ -77,8 +80,8 @@ def _get_daily_ws():
         _daily_ws = sh.add_worksheet(title=GOOGLE_SHEET_WORKSHEET, rows=2000, cols=10)
 
     first_row = _daily_ws.row_values(1)
-    if first_row[:8] != DAILY_HEADER:
-        _daily_ws.update("A1:H1", [DAILY_HEADER])
+    if first_row[:10] != DAILY_HEADER:
+        _daily_ws.update("A1:J1", [DAILY_HEADER])
     return _daily_ws
 
 
@@ -127,7 +130,7 @@ def lookup_employee(username: str | None):
 
 
 def append_shift_row(shift_date: str, telegram_username: str, fallback_name: str,
-                      shift_hours: float) -> int:
+                      in_time: str, out_time: str, shift_hours: float) -> int:
     """
     Добавляет строку новой закрытой смены в лист Daily.
     Имя/Позиция/Ставка подтягиваются из листа "Персонал" по Telegram-аккаунту.
@@ -147,7 +150,8 @@ def append_shift_row(shift_date: str, telegram_username: str, fallback_name: str
     formula = SPECIAL_FORMULAS.get(position.lower(), DEFAULT_FORMULA).format(r=row_num)
 
     ws.append_row(
-        [shift_date, full_name, round(shift_hours, 2), rate, 0, 0, 0, formula],
+        [shift_date, full_name, in_time, out_time, round(shift_hours, 2),
+         rate, 0, 0, 0, formula],
         value_input_option="USER_ENTERED",
     )
     return row_num
@@ -156,7 +160,7 @@ def append_shift_row(shift_date: str, telegram_username: str, fallback_name: str
 def append_shift_rows(rows: list[tuple]) -> None:
     """
     Пакетно добавляет несколько закрытых смен за раз: каждый элемент —
-    (shift_date, telegram_username, fallback_name, shift_hours).
+    (shift_date, telegram_username, fallback_name, in_time, out_time, shift_hours).
     Гораздо быстрее, чем append_shift_row в цикле (один запрос к API вместо N).
     """
     if not rows:
@@ -167,7 +171,7 @@ def append_shift_rows(rows: list[tuple]) -> None:
     next_row = len(values) + 1
 
     batch = []
-    for shift_date, telegram_username, fallback_name, shift_hours in rows:
+    for shift_date, telegram_username, fallback_name, in_time, out_time, shift_hours in rows:
         found = lookup_employee(telegram_username)
         if found:
             full_name, position, rate = found
@@ -175,7 +179,8 @@ def append_shift_rows(rows: list[tuple]) -> None:
             full_name, position, rate = fallback_name, "", 0.0
 
         formula = SPECIAL_FORMULAS.get(position.lower(), DEFAULT_FORMULA).format(r=next_row)
-        batch.append([shift_date, full_name, round(shift_hours, 2), rate, 0, 0, 0, formula])
+        batch.append([shift_date, full_name, in_time, out_time, round(shift_hours, 2),
+                      rate, 0, 0, 0, formula])
         next_row += 1
 
     ws.append_rows(batch, value_input_option="USER_ENTERED")
