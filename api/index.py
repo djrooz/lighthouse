@@ -51,8 +51,8 @@ def process_update(update: dict) -> None:
         sessions, leftover = core.pair_events(events)
 
         rows = [
-            (s["in_dt"].strftime("%d.%m.%Y") if hasattr(s["in_dt"], "strftime") else s["in_dt"],
-             s["username"], s["full_name"], s["hours"])
+            (s["in_dt"].strftime("%d.%m.%Y"), s["username"], s["full_name"],
+             s["in_dt"].strftime("%H:%M"), s["out_dt"].strftime("%H:%M"), s["hours"])
             for s in sessions
         ]
         sheets.append_shift_rows(rows)
