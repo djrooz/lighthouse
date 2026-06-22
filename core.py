@@ -71,6 +71,24 @@ def message_to_event(message: dict) -> dict | None:
     }
 
 
+def split_by_today(events: list[dict]) -> tuple[list[dict], list[dict]]:
+    """
+    Делит события на 'today_events' (дата совпадает с сегодняшней по локальной
+    таймзоне) и 'old_events' (всё, что осталось с прошлых дней — например,
+    кто-то забыл написать "Ушел" вчера). old_events не обрабатываются и не
+    переносятся дальше — они отбрасываются при вызове /итоги.
+    """
+    today = datetime.now(TZ).date()
+    today_events, old_events = [], []
+    for e in events:
+        dt = datetime.fromisoformat(e["dt"]) if isinstance(e["dt"], str) else e["dt"]
+        if dt.date() == today:
+            today_events.append(e)
+        else:
+            old_events.append(e)
+    return today_events, old_events
+
+
 def pair_events(events: list[dict]) -> tuple[list[dict], list[dict]]:
     """
     events — список словарей с полем 'dt' (ISO-строка). Возвращает
