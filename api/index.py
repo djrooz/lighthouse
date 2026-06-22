@@ -35,7 +35,7 @@ def process_update(update: dict) -> None:
         if sender_id not in ADMIN_IDS:
             telegram_api.send_message(
                 message["chat"]["id"],
-                "Команда доступна только администратору.",
+                f"Команда доступна только администратору. Ваш ID: {sender_id}",
                 message.get("message_thread_id"),
             )
             return
