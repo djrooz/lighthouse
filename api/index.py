@@ -41,14 +41,16 @@ def process_update(update: dict) -> None:
             return
 
         events = sheets.read_buffer()
-        if not events:
+        today_events, old_events = core.split_by_today(events)
+
+        if not today_events and not old_events:
             telegram_api.send_message(
                 message["chat"]["id"], "Нет новых отметок для обработки.",
                 message.get("message_thread_id"),
             )
             return
 
-        sessions, leftover = core.pair_events(events)
+        sessions, leftover = core.pair_events(today_events)
 
         rows = [
             (s["in_dt"].strftime("%d.%m.%Y"), s["username"], s["full_name"],
@@ -56,11 +58,13 @@ def process_update(update: dict) -> None:
             for s in sessions
         ]
         sheets.append_shift_rows(rows)
-        sheets.write_buffer(leftover)
+        sheets.write_buffer(leftover)  # old_events отбрасываются, не переносятся дальше
 
         reply = f"✅ Готово: записано смен — {len(sessions)}."
         if leftover:
             reply += f" Не закрыто (без пары): {len(leftover)} — останутся для следующего /итоги."
+        if old_events:
+            reply += f" Отброшено старых незакрытых отметок (за прошлые дни): {len(old_events)}."
         telegram_api.send_message(message["chat"]["id"], reply, message.get("message_thread_id"))
         return
 
