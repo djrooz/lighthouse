@@ -98,46 +98,61 @@ def _normalize_username(value: str) -> str:
     return (value or "").strip().lstrip("@").lower()
 
 
-def lookup_employee(username: str | None):
+def lookup_employee(username: str | None, tg_id: int | None = None):
     """
-    Ищет сотрудника в листе "Персонал" по Telegram-аккаунту.
-    Возвращает (full_name, position, rate) или None, если не найден
-    (например, у человека не указан Telegram в этом листе).
+    Ищет сотрудника в листе "Персонал" по Telegram-аккаунту. В колонке
+    "Telegram" может быть указан либо ник (@nick или nick), либо числовой
+    Telegram ID — бот сам определяет, что сравнивать.
+    Возвращает (full_name, position, rate) или None, если не найден.
     """
-    if not username:
+    if not username and not tg_id:
         return None
 
     ws = _get_personnel_ws()
     rows = ws.get_all_values()[1:]  # пропускаем заголовок
-    target = _normalize_username(username)
+    target_username = _normalize_username(username) if username else ""
+    target_id = str(tg_id) if tg_id else ""
 
     for row in rows:
         if len(row) < 2:
             continue
         name = row[0] if len(row) > 0 else ""
-        telegram = row[1] if len(row) > 1 else ""
+        telegram = (row[1] if len(row) > 1 else "").strip()
         position = row[2] if len(row) > 2 else ""
         rate_str = row[3] if len(row) > 3 else ""
 
-        if target and _normalize_username(telegram) == target:
+        if not telegram:
+            continue
+
+        matched = False
+        if telegram.lstrip("-").isdigit():
+            # в колонке числовой Telegram ID
+            matched = target_id and telegram == target_id
+        else:
+            # в колонке ник
+            matched = target_username and _normalize_username(telegram) == target_username
+
+        if matched:
             try:
                 rate = float(rate_str.replace(",", ".")) if rate_str.strip() else 0.0
             except ValueError:
                 rate = 0.0
-            return name or username, position.strip(), rate
+            return name or username or str(tg_id), position.strip(), rate
 
     return None
 
 
 def append_shift_row(shift_date: str, telegram_username: str, fallback_name: str,
-                      in_time: str, out_time: str, shift_hours: float) -> int:
+                      in_time: str, out_time: str, shift_hours: float,
+                      tg_id: int | None = None) -> int:
     """
     Добавляет строку новой закрытой смены в лист Daily.
-    Имя/Позиция/Ставка подтягиваются из листа "Персонал" по Telegram-аккаунту.
+    Имя/Позиция/Ставка подтягиваются из листа "Персонал" по Telegram-аккаунту
+    (нику или числовому ID — что указано в колонке "Telegram").
     Если сотрудник не найден там — пишет fallback_name и ставку 0 (админ
     донастроит лист "Персонал" и поправит строку вручную).
     """
-    found = lookup_employee(telegram_username)
+    found = lookup_employee(telegram_username, tg_id)
     if found:
         full_name, position, rate = found
     else:
@@ -160,7 +175,7 @@ def append_shift_row(shift_date: str, telegram_username: str, fallback_name: str
 def append_shift_rows(rows: list[tuple]) -> None:
     """
     Пакетно добавляет несколько закрытых смен за раз: каждый элемент —
-    (shift_date, telegram_username, fallback_name, in_time, out_time, shift_hours).
+    (shift_date, telegram_username, fallback_name, in_time, out_time, shift_hours, tg_id).
     Гораздо быстрее, чем append_shift_row в цикле (один запрос к API вместо N).
     """
     if not rows:
@@ -171,8 +186,8 @@ def append_shift_rows(rows: list[tuple]) -> None:
     next_row = len(values) + 1
 
     batch = []
-    for shift_date, telegram_username, fallback_name, in_time, out_time, shift_hours in rows:
-        found = lookup_employee(telegram_username)
+    for shift_date, telegram_username, fallback_name, in_time, out_time, shift_hours, tg_id in rows:
+        found = lookup_employee(telegram_username, tg_id)
         if found:
             full_name, position, rate = found
         else:
