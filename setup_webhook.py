@@ -20,7 +20,10 @@ def main():
     webhook_url = sys.argv[1]
     resp = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
-        params={"url": webhook_url},
+        params={
+            "url": webhook_url,
+            "allowed_updates": '["message","edited_message"]',
+        },
         timeout=15,
     )
     print(resp.json())
