@@ -21,7 +21,7 @@ log = logging.getLogger("webhook")
 
 
 def process_update(update: dict) -> None:
-    message = update.get("message")
+    message = update.get("message") or update.get("edited_message")
     if not message:
         return
 
